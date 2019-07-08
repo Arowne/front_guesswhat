@@ -26,15 +26,17 @@
         <button type="button" class="btn btn-start btn-success float-right m-2 mr-5 d-none" @dblclick="this.startGame">START</button>
         <button type="button" class="btn btn-stop btn-danger float-right m-2 mr-5 d-none" @dblclick="this.deleteRoom">DELETE</button>
       </div>
-      <div class="draws w-75 float-left bg-danger text-center">
-        <span>CURRENT_DRAWER_DRAW</span>
-        <input type="color"  class="js-color-picker">
-        <input type="range" class="js-line-range" min="1" max="72" value="1">
-        <label class="js-range-value">1</label>Px
-        <div class="d-flex justify-content-center">
-          <canvas class="js-paint  paint-canvas" id="canvas" width="600" height="300"></canvas>
+      <div class="draws w-75 float-left text-center">
+        <div class="draw-container d-none">
+          <input type="color"  class="js-color-picker">
+          <input type="range" class="js-line-range" min="1" max="72" value="1">
+          <label class="js-range-value">1</label>Px
+          <div class="d-flex justify-content-center canvas-container">
+            <canvas class="js-paint paint-canvas" id="canvas" width="600" height="600"></canvas>
+          </div>
         </div>
-
+        <div class="draw-display-container">
+        </div>
       </div>
       <div class="messages w-25 float-right">
         <ul>
@@ -127,6 +129,7 @@ export default {
                   that.drawTurn = false;
                   that.socketio.emit('set-word', {room:roomId, message: that.currentWord});
                   $('.word-container').addClass('d-none');
+                  $('.draw-container').removeClass('d-none');
                   that.sendDesign()
                 }
             })
@@ -145,8 +148,13 @@ export default {
       })
     },
     currentDraw() {
+      let that = this;
       this.socketio.on('emit-draw', function(data){
-        console.log(data)
+          if(!that.onDrawTurn){
+            var image = new Image();
+            image.src = data.message;
+            $('.draw-display-container').html(image)
+          }
       })
     },
     sendResponse () {
@@ -156,7 +164,7 @@ export default {
         let roomId = this.$data.roomId;
         let userColor = this.$data.userColor;
         
-        if($('.response-input').val().length != 0){
+        if($('.response-input').val().length != 0 && !this.onDrawTurn){
           this.socketio.emit('response', {room:roomId, message: response, name, color: userColor});
           this.submitKey += 1
         }
@@ -207,6 +215,14 @@ export default {
       this.socketio.on('message', function(data){
 
         if(data.find){
+          that.onDrawTurn = false;
+
+          let drawContainer = $('.draw-container');
+          $('.paint-canvas').remove();
+          $('.canvas-container').html('<canvas class="js-paint paint-canvas" id="canvas" width="600" height="600"></canvas>');
+          $('.draw-display-container').html(' ')
+          $('.draw-container').addClass('d-none');
+          that.setPaint();
           $('.get-winner').removeClass('d-none');
           $('.get-winner').html( '<strong>' + data.name+ '</strong>'+ ' FIND THE WORD')
 
@@ -270,12 +286,93 @@ export default {
           let canvasToBase64 = document.getElementById("canvas").toDataURL("image/png").replace(/^data:image\/[^;]/, 'data:application/octet-stream');
 
           that.socketio.emit('send-image',  {room:roomId, message: canvasToBase64})
-          // var image = new Image();
-          // image.src = canvasToBase64;
-          // document.body.appendChild(image);
+
         }
       }, 1000)
 
+    },
+    setPaint: function (){
+      const paintCanvas = document.querySelector( '.js-paint' );
+      const context = paintCanvas.getContext( '2d' );
+      context.lineCap = 'round';
+
+      const colorPicker = document.querySelector( '.js-color-picker');
+
+      colorPicker.addEventListener( 'change', event => {
+          context.strokeStyle = event.target.value; 
+      } );
+
+      const lineWidthRange = document.querySelector( '.js-line-range' );
+      const lineWidthLabel = document.querySelector( '.js-range-value' );
+
+      lineWidthRange.addEventListener( 'input', event => {
+          const width = event.target.value;
+          lineWidthLabel.innerHTML = width;
+          context.lineWidth = width;
+      } );
+
+      let x = 0, y = 0;
+      let isMouseDown = false;
+
+      const stopDrawing = () => { isMouseDown = false; }
+      const startDrawing = event => {
+          isMouseDown = true;   
+        [x, y] = [event.offsetX, event.offsetY];  
+      }
+      const drawLine = event => {
+          if ( isMouseDown ) {
+              const newX = event.offsetX;
+              const newY = event.offsetY;
+              context.beginPath();
+              context.moveTo( x, y );
+              context.lineTo( newX, newY );
+              context.stroke();
+              [x, y] = [newX, newY];
+          }
+      }
+
+      paintCanvas.addEventListener( 'mousedown', startDrawing );
+      paintCanvas.addEventListener( 'mousemove', drawLine );
+      paintCanvas.addEventListener( 'mouseup', stopDrawing );
+      paintCanvas.addEventListener( 'mouseout', stopDrawing );
+    },
+    newUser: function () {
+      let roomId = this.$data.roomId;
+      let username = this.$data.username;
+      this.socketio.on('new-user', function(response){
+        
+        let roomList = document.querySelector('.room-list');
+        roomList.innerHTML = '';
+
+        for (let i = 0; i < response.length; i++) {
+        
+          let roomContainer = document.createElement('li');
+          let roomWrapper = document.createElement('div');
+          let roomStatus = document.createElement('span');
+          let roomData = document.createElement('div');
+          let roomName = document.createElement('p');
+          let roomHref = document.createElement('a');
+
+          roomContainer.classList.add('contact');
+          roomWrapper.classList.add('wrap');
+          roomStatus.classList.add('contact-status');
+          roomStatus.classList.add('online');
+          roomData.classList.add('meta');
+          roomHref.setAttribute('href', '/chat-room/'+ response[i].name)
+          roomName.classList.add('name');
+          roomName.classList.add('h4');
+          roomName.classList.add('text-center');
+
+          roomName.innerHTML = response[i].name
+          roomList.append(roomContainer);
+          roomContainer.append(roomWrapper);
+          roomWrapper.append(roomStatus);
+          roomWrapper.append(roomData);
+          roomData.append(roomHref);
+          roomHref.append(roomName);
+
+        }
+      });
     }
   },
   created() {
@@ -286,52 +383,14 @@ export default {
     this.setTurn()
     this.beginTurn()
     this.sendDesign()
+    this.currentDraw()
   },
   mounted () {
-    const paintCanvas = document.querySelector( '.js-paint' );
-    const context = paintCanvas.getContext( '2d' );
-    context.lineCap = 'round';
-
-    const colorPicker = document.querySelector( '.js-color-picker');
-
-    colorPicker.addEventListener( 'change', event => {
-        context.strokeStyle = event.target.value; 
-    } );
-
-    const lineWidthRange = document.querySelector( '.js-line-range' );
-    const lineWidthLabel = document.querySelector( '.js-range-value' );
-
-    lineWidthRange.addEventListener( 'input', event => {
-        const width = event.target.value;
-        lineWidthLabel.innerHTML = width;
-        context.lineWidth = width;
-    } );
-
-    let x = 0, y = 0;
-    let isMouseDown = false;
-
-    const stopDrawing = () => { isMouseDown = false; }
-    const startDrawing = event => {
-        isMouseDown = true;   
-      [x, y] = [event.offsetX, event.offsetY];  
-    }
-    const drawLine = event => {
-        if ( isMouseDown ) {
-            const newX = event.offsetX;
-            const newY = event.offsetY;
-            context.beginPath();
-            context.moveTo( x, y );
-            context.lineTo( newX, newY );
-            context.stroke();
-            [x, y] = [newX, newY];
-        }
-    }
-
-    paintCanvas.addEventListener( 'mousedown', startDrawing );
-    paintCanvas.addEventListener( 'mousemove', drawLine );
-    paintCanvas.addEventListener( 'mouseup', stopDrawing );
-    paintCanvas.addEventListener( 'mouseout', stopDrawing );
-
+    let that = this
+    setTimeout(function (){
+      that.newUser()      
+    }, 3000)
+    this.setPaint()
   }
 }
 

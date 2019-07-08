@@ -29,25 +29,31 @@
 
 <script>
 import io from 'socket.io-client';
-import { setInterval } from 'timers';
+import { setInterval, setTimeout } from 'timers';
 
 export default {
   name: 'CreateRoom',
   data: function(){
     return {
       roomName: '',
+      newRoom: false,
       socketio: io('http://localhost:7000/', {transports: ['websocket']})
     }
   },
   methods: {
     setRoomName: function () {
         let roomName = this.$data.roomName;
-        if(roomName){
-            let that = this
-            this.socketio.emit('create-room', {name: roomName}, function(response){
-                localStorage.setItem('guesswhat-creator-token', response.creator)
-                that.$router.push('/chat-room/' + response.ID);
-            });
+        if(roomName && this.$data.newRoom == false){
+
+            let that = this;
+            this.$data.newRoom = true;
+            setTimeout(function (){
+              that.socketio.emit('create-room', {name: roomName}, function(response){
+                  localStorage.setItem('guesswhat-creator-token', response.creator)
+                  that.$router.push('/chat-room/' + response.ID);
+              });
+            }, 3000)
+
         }
     }
   }
